@@ -136,7 +136,7 @@ def cs4b_key_exchange(local_secret, remote_csk):
 | AEAD | XSalsa20-Poly1305 | 32-byte key |
 
 **Properties**:
-- Compatible with original telehash v3
+- Compatible with original [Telehash v3](https://github.com/telehash/telehash.github.io)
 - No separate signature algorithm (key agreement provides authentication)
 - Simpler but less flexible
 

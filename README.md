@@ -2,7 +2,11 @@
 
 **Privacy-first mesh networking for the post-quantum era.**
 
-TNG26 is a modern reimagining of the Telehash protocol. The protocol itself is called **TNG (Telehash Next Generation)**, and this repository (TNG26) contains its complete specification and documentation.
+TNG26 is a modern reimagining of the [Telehash protocol](https://github.com/telehash). The protocol itself is called **TNG (Telehash Next Generation)**, and this repository (TNG26) contains its complete specification and documentation.
+
+> **Note**: TNG26 builds upon the original Telehash protocol. For reference to the original Telehash specification and implementations, see:
+> - [Telehash GitHub Organization](https://github.com/telehash)
+> - [Telehash Protocol Documentation](https://github.com/telehash/telehash.github.io)
 
 ## Project Goals
 

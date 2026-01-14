@@ -2,6 +2,10 @@
 
 This document provides an architectural overview of the Telehash Next Generation (TNG) protocol and serves as a hub linking to detailed specifications for each component.
 
+> **Note**: TNG is a modern evolution of the original [Telehash protocol](https://github.com/telehash). For reference to the original Telehash specification and implementations, see:
+> - [Telehash GitHub Organization](https://github.com/telehash)
+> - [Telehash Protocol Documentation](https://github.com/telehash/telehash.github.io)
+
 ## Protocol Stack
 
 TNG is organized into distinct layers, each with specific responsibilities:

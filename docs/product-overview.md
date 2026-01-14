@@ -4,7 +4,11 @@
 
 **Privacy-first mesh networking for the post-quantum era.**
 
-Telehash Next Generation (TNG) is a complete re-imagination of the original telehash protocol, designed to provide secure, private, decentralized communication between any devices—from cloud servers to constrained embedded sensors. In an era of increasing surveillance and the looming threat of quantum computing, TNG ensures that your communications remain private today and secure tomorrow.
+Telehash Next Generation (TNG) is a complete re-imagination of the original [Telehash protocol](https://github.com/telehash), designed to provide secure, private, decentralized communication between any devices—from cloud servers to constrained embedded sensors. In an era of increasing surveillance and the looming threat of quantum computing, TNG ensures that your communications remain private today and secure tomorrow.
+
+> **Related**: The original Telehash protocol specification and implementations are available at:
+> - [Telehash GitHub Organization](https://github.com/telehash)
+> - [Telehash Protocol Documentation](https://github.com/telehash/telehash.github.io)
 
 ## Design Principles
 
