@@ -38,7 +38,9 @@ class Mesh:
         self.hashname = generate_hashname(local_keys)
         self.links: dict[str, Link] = {}  # hashname -> Link
         self.routers: list[str] = []  # hashnames of routers
+        self.routes: RouteTable = RouteTable()  # route table for destinations
         self.discovery_mode = False
+        self.is_router = False  # Whether this endpoint acts as a router
     
     def add_link(self, link_json: dict) -> Link:
         """Add or update a link from JSON"""
@@ -70,6 +72,159 @@ def set_router(self, hashname: str, is_router: bool):
     else:
         if hashname in self.routers:
             self.routers.remove(hashname)
+```
+
+## Route Table
+
+The mesh maintains a route table for tracking paths to destinations beyond directly-linked peers. This is essential for [loop prevention](routing.md#loop-prevention) and efficient routing.
+
+### Route Entry
+
+Each route entry contains:
+
+```python
+@dataclass
+class RouteEntry:
+    destination: str      # Target hashname
+    via: str              # Next-hop peer hashname
+    seqno: int            # Route sequence number (for freshness)
+    hops: int             # Hop count metric
+    updated_at: float     # When route was last updated
+    expires_at: float     # When route expires
+```
+
+### Route Table Implementation
+
+```python
+class RouteTable:
+    DEFAULT_TTL = 300  # 5 minutes
+    
+    def __init__(self):
+        self.routes: dict[str, RouteEntry] = {}
+        self.feasible_distance: dict[str, tuple[int, int]] = {}  # dest -> (seqno, hops)
+    
+    def update(self, dest: str, via: str, seqno: int, hops: int) -> bool:
+        """
+        Update route if valid. Returns True if route was accepted.
+        
+        Implements:
+        - Sequence number validation (reject stale routes)
+        - Feasibility condition (loop prevention)
+        - Split horizon (caller's responsibility)
+        """
+        # Check sequence number
+        existing = self.routes.get(dest)
+        if existing and seqno < existing.seqno:
+            return False  # Reject older sequence
+        
+        # Check feasibility condition
+        if not self._is_feasible(dest, seqno, hops):
+            return False  # Would create loop
+        
+        # Accept route
+        now = time.time()
+        self.routes[dest] = RouteEntry(
+            destination=dest,
+            via=via,
+            seqno=seqno,
+            hops=hops,
+            updated_at=now,
+            expires_at=now + self.DEFAULT_TTL
+        )
+        return True
+    
+    def _is_feasible(self, dest: str, seqno: int, hops: int) -> bool:
+        """Check feasibility condition (Babel-style loop prevention)"""
+        if dest not in self.feasible_distance:
+            self.feasible_distance[dest] = (seqno, hops)
+            return True
+        
+        stored_seqno, stored_hops = self.feasible_distance[dest]
+        
+        if seqno > stored_seqno:
+            # New epoch - reset feasible distance
+            self.feasible_distance[dest] = (seqno, hops)
+            return True
+        
+        if seqno == stored_seqno and hops <= stored_hops:
+            # Same epoch, acceptable metric
+            if hops < stored_hops:
+                self.feasible_distance[dest] = (seqno, hops)
+            return True
+        
+        return False  # Worse than feasible distance
+    
+    def get(self, dest: str) -> Optional[RouteEntry]:
+        """Get valid route to destination"""
+        entry = self.routes.get(dest)
+        if entry and time.time() < entry.expires_at:
+            return entry
+        return None
+    
+    def remove(self, dest: str):
+        """Remove route to destination"""
+        self.routes.pop(dest, None)
+    
+    def expire(self):
+        """Remove all expired routes"""
+        now = time.time()
+        expired = [d for d, r in self.routes.items() if now >= r.expires_at]
+        for dest in expired:
+            del self.routes[dest]
+            # Clean up feasible_distance for expired routes
+            self.feasible_distance.pop(dest, None)
+```
+
+### Split Horizon
+
+When propagating routes, never advertise a route back to the peer from which it was learned:
+
+```python
+def propagate_routes(self, exclude_peer: str = None):
+    """Propagate known routes to peers (respecting split horizon)"""
+    for dest, route in self.routes.routes.items():
+        for peer_hashname, link in self.links.items():
+            # Split horizon: don't send back to source
+            if peer_hashname == route.via:
+                continue
+            
+            # Don't send to explicitly excluded peer
+            if peer_hashname == exclude_peer:
+                continue
+            
+            # Only propagate if acting as router
+            if peer_hashname in self.routers or self.is_router:
+                self._send_route_update(link, route)
+```
+
+### Route Events
+
+The mesh emits route-related events:
+
+| Event | Data | Description |
+|-------|------|-------------|
+| `route_added` | RouteEntry | New route learned |
+| `route_updated` | RouteEntry | Existing route updated |
+| `route_removed` | destination | Route expired or withdrawn |
+
+### Receiving Route Updates
+
+When a peer sends route information:
+
+```python
+def on_route_received(self, from_link: Link, route_info: dict):
+    """Handle incoming route information from a peer"""
+    # Gateway route_info uses "gateway" field, mesh routes use "destination"
+    dest = route_info.get("gateway") or route_info.get("destination")
+    seqno = route_info["seqno"]
+    hops = route_info["hops"] + 1  # Increment hop count
+    
+    if self.routes.update(dest, from_link.hashname, seqno, hops):
+        self._emit("route_updated", self.routes.get(dest))
+        
+        # Optionally re-propagate (if router)
+        if self.is_router:
+            self.propagate_routes(exclude_peer=from_link.hashname)
 ```
 
 ## Discovery
@@ -327,4 +482,4 @@ Every link must be explicitly accepted:
 
 ---
 
-*Related: [Links](links.md) | [Routing](routing.md) | [Technical Overview](../technical-overview.md)*
+*Related: [Links](links.md) | [Routing](routing.md) | [Route Metrics](route-metrics.md) | [Technical Overview](../technical-overview.md)*

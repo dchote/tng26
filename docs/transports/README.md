@@ -221,6 +221,95 @@ def select_transport(paths: list[dict], capabilities: set[str]) -> dict:
 
 ---
 
+## Transport Capabilities — Advanced
+
+Each transport has different capabilities that affect what traffic it can carry. This is particularly important for [gateway routing](../core/gateway.md) and [route metrics](../core/route-metrics.md).
+
+### Capability Flags
+
+| Flag | Description |
+|------|-------------|
+| `MESH_RELAY` | Can relay E3X mesh traffic between peers |
+| `GATEWAY_ROUTE` | Valid path segment to reach an exit gateway |
+| `IP_TUNNEL` | Can carry `iptunnel` channel traffic |
+| `TCP_PROXY` | Can carry `tcp_proxy` channel traffic |
+| `UDP_PROXY` | Can carry `udp_proxy` channel traffic |
+| `CONSTRAINED` | Low bandwidth and/or high latency transport |
+
+### Transport Capability Matrix
+
+| Transport | MESH_RELAY | GATEWAY_ROUTE | IP_TUNNEL | TCP_PROXY | UDP_PROXY | CONSTRAINED |
+|-----------|------------|---------------|-----------|-----------|-----------|-------------|
+| **QUIC** | ✓ | ✓ | ✓ | ✓ | ✓ | |
+| **WebTransport** | ✓ | ✓ | ✓ | ✓ | ✓ | |
+| **Bluetooth LE** | ✓ | ✓ | | ✓ | | ✓ |
+| **802.11 WiFi** | ✓ | ✓ | ✓ | ✓ | ✓ | |
+| **802.15.4** | ✓ | ✓ | | | | ✓ |
+| **LoRa** | ✓ | | | | | ✓ |
+| **433/915MHz** | ✓ | | | | | ✓ |
+
+### IP Routing Suitability
+
+Not all transports can carry IP/gateway traffic effectively:
+
+| Transport | IP Suitable | Reason |
+|-----------|-------------|--------|
+| **QUIC** | Excellent | Primary IP transport, high bandwidth |
+| **WebTransport** | Excellent | Browser environments, high bandwidth |
+| **Bluetooth LE** | Marginal | Short range, limited bandwidth, needs fragmentation |
+| **802.11 WiFi** | Good | Usually use QUIC over WiFi |
+| **802.15.4** | Limited | 6LoWPAN possible but constrained |
+| **LoRa** | **No** | Duty cycle + latency prohibitive |
+| **433/915MHz** | **No** | Too constrained for IP |
+
+### Why LoRa Cannot Route IP Traffic
+
+LoRa is explicitly **excluded from IP/gateway routing** due to fundamental constraints:
+
+| Constraint | LoRa Value | Impact |
+|------------|------------|--------|
+| **Duty cycle** | 1% (EU868) | Only 36 seconds transmit per hour |
+| **Latency** | 56-1400ms | Per-packet, varies by spreading factor |
+| **Bandwidth** | 0.3-50 kbps | Cannot sustain TCP connections |
+| **MTU** | 255 bytes | Extensive fragmentation for 1500B IP packets |
+
+**LoRa devices can still reach the internet** by routing through a gateway bridge node:
+
+```
+LoRa sensor → (LoRa) → Gateway node → (QUIC) → Exit Gateway → Internet
+                            │
+                            └── LoRa segment NOT part of IP tunnel path
+```
+
+### Transport Selection for Gateway Traffic
+
+When selecting routes for gateway/IP traffic, filter by capability:
+
+```python
+def select_gateway_path(paths: list[dict]) -> dict:
+    """Select path suitable for gateway traffic"""
+    
+    # Only these transports can carry gateway traffic
+    gateway_capable = {"quic", "webtransport", "bluetooth", "802.11", "802.15.4"}
+    
+    # Prefer high-bandwidth transports
+    priority = ["quic", "webtransport", "802.11", "bluetooth", "802.15.4"]
+    
+    for transport_type in priority:
+        if transport_type not in gateway_capable:
+            continue
+        
+        for path in paths:
+            if path["type"] == transport_type:
+                return path
+    
+    return None  # No suitable path for gateway traffic
+```
+
+See [Route Metrics](../core/route-metrics.md) for detailed transport profiles and path cost calculations.
+
+---
+
 ## Chunking (Physical Transports)
 
 Physical transports with small MTUs require packet chunking.

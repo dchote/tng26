@@ -266,6 +266,137 @@ TNG defines several built-in channel types:
 | `path` | Reliable | Path/connectivity negotiation |
 | `peer` | Reliable | Routing requests |
 | `connect` | Reliable | Connection assistance |
+| `route_info` | Reliable | Gateway route propagation (Advanced) |
+| `route_query` | Reliable | Gateway route solicitation (Advanced) |
+
+### Routing Channels and Hop Limit
+
+The `peer` and `connect` channels used for [routing](routing.md) include a `hops` field for loop prevention:
+
+```json
+HEAD: {
+  "c": 1,
+  "type": "peer",
+  "seq": 0,
+  "hops": 16      // Hop limit (required for routing channels)
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `hops` | u8 | Yes (routing) | Remaining hop count, decremented by each router |
+
+**Hop Limit Rules:**
+
+1. **Originator** sets `hops` to initial value (default: 16, max: 64)
+2. **Router** decrements `hops` before forwarding to next hop
+3. **Router** discards packet silently if `hops` reaches 0
+4. **Receiver** processes packet regardless of `hops` value
+
+```
+Routing example with hop limit:
+
+  A ──────────► R1 ──────────► R2 ──────────► B
+    peer         peer           connect
+    hops=16      hops=15        hops=14
+```
+
+This prevents packets from circulating indefinitely in case of routing loops. See [Loop Prevention](routing.md#loop-prevention) for details.
+
+### Gateway Discovery Channels — Advanced
+
+These channel types are used for exit gateway discovery and route propagation:
+
+#### `route_info` Channel
+
+Used to propagate gateway route information through the mesh:
+
+```json
+HEAD: {
+  "c": 123,
+  "type": "route_info",
+  "seq": 0
+}
+BODY: {
+  "gateway": "<gateway hashname>",
+  "seqno": <32-bit sequence number>,
+  "hops": <current hop count>,
+  "via": "<peer hashname>",
+  "capabilities": ["ipv4", "ipv6", "nat", "dns"],
+  "prefixes": [
+    {
+      "prefix": "0.0.0.0/0",
+      "type": "ipv4",
+      "metric": {...}
+    }
+  ],
+  "ttl": 300,
+  "timestamp": <unix-seconds>
+}
+```
+
+**Properties:**
+- **Reliability**: Reliable (ordered, acknowledged)
+- **Propagation**: Sent to directly linked peers, optionally re-propagated by routers
+- **Loop prevention**: Uses sequence numbers and split horizon (see [Gateway Discovery](gateway.md#exit-gateway-discovery))
+
+#### `route_query` Channel
+
+Used to actively query peers for known gateway routes:
+
+```json
+HEAD: {
+  "c": 124,
+  "type": "route_query",
+  "seq": 0
+}
+BODY: {
+  "need": "ipv4",           // Optional: "ipv4" or "ipv6"
+  "prefix": "0.0.0.0/0"     // Optional: specific prefix
+}
+```
+
+**Response:**
+
+```json
+HEAD: {
+  "c": 124,
+  "type": "route_query",
+  "seq": 0,
+  "ack": 0
+}
+BODY: {
+  "routes": [
+    {
+      "gateway": "<hashname>",
+      "hops": <number>,
+      "via": "<peer hashname>",
+      "metric": {...},
+      "prefixes": [...]
+    }
+  ]
+}
+```
+
+**Properties:**
+- **Reliability**: Reliable (request/response pattern)
+- **Use case**: On-demand gateway discovery when route_info hasn't been received
+- **Privacy**: Only queries directly linked peers (no mesh-wide broadcast)
+
+See [Gateway - Exit Gateway Discovery](gateway.md#exit-gateway-discovery) for detailed protocol specification.
+
+### Gateway Channel Types
+
+The following channel types are used by the [Gateway](gateway.md) component for IP connectivity:
+
+| Type | Reliability | Purpose |
+|------|-------------|---------|
+| `iptunnel` | Reliable | IP packet tunneling (Entry ↔ Exit Gateway) |
+| `tcp_proxy` | Reliable | TCP connection proxy (TNG node → Exit Gateway) |
+| `udp_proxy` | Unreliable | UDP datagram proxy (TNG node → Exit Gateway) |
+| `dns_query` | Reliable | DNS resolution via Exit Gateway |
+
+See [Gateway](gateway.md) for detailed specifications of these channel types.
 
 ### Stream Channel
 
@@ -350,4 +481,4 @@ For reliable channels, consider:
 
 ---
 
-*Related: [E3X](e3x.md) | [Links](links.md) | [LOB Packets](lob.md)*
+*Related: [E3X](e3x.md) | [Links](links.md) | [LOB Packets](lob.md) | [Gateway](gateway.md) | [Routing](routing.md)*

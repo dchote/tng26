@@ -43,7 +43,8 @@ Sent **to** a router to request connection assistance:
 HEAD: {
   "c": 1,
   "type": "peer",
-  "seq": 0
+  "seq": 0,
+  "hops": 16
 }
 BODY: {
   "hashname": "target-hashname",
@@ -51,6 +52,8 @@ BODY: {
   "paths": [...]
 }
 ```
+
+The `hops` field is **required** for loop prevention (see [Loop Prevention](#loop-prevention)).
 
 The router:
 1. Looks up the target hashname
@@ -65,7 +68,8 @@ Sent **from** a router to notify of incoming connection:
 HEAD: {
   "c": 2,
   "type": "connect",
-  "seq": 0
+  "seq": 0,
+  "hops": 15
 }
 BODY: {
   "hashname": "requesting-hashname",
@@ -73,6 +77,8 @@ BODY: {
   "paths": [...]
 }
 ```
+
+The `hops` field is decremented by the router before forwarding (see [Loop Prevention](#loop-prevention)).
 
 The target can:
 - Accept by responding with handshake
@@ -289,6 +295,219 @@ def select_router(self, target: str) -> Optional[Link]:
     return candidates[0][0]
 ```
 
+## Loop Prevention
+
+Loop prevention is **required** for all TNG implementations that perform routing or relay. These mechanisms prevent packets from circulating indefinitely in the mesh and ensure route convergence.
+
+### Hop Limit (TTL) — Required
+
+Every routed packet includes a `hops` field that limits propagation depth:
+
+```
+Relayed packet through router chain:
+
+  A ──peer──► R1 ──peer──► R2 ──connect──► B
+      hops=16     hops=15       hops=14
+```
+
+**Rules:**
+
+1. **Originator** sets `hops` to initial value (default: 16)
+2. **Router** decrements `hops` before forwarding
+3. **Router** discards packet if `hops` reaches 0
+4. **Maximum** configurable value is 64
+
+```python
+DEFAULT_HOPS = 16
+MAX_HOPS = 64
+
+def forward_packet(self, packet: dict, from_link: Link, to_link: Link):
+    """Forward a routed packet, enforcing hop limit"""
+    hops = packet.get("hops", DEFAULT_HOPS)
+    
+    if hops <= 0:
+        # Drop packet - TTL exceeded
+        self._log_ttl_exceeded(packet, from_link)
+        return
+    
+    # Decrement and forward
+    packet["hops"] = hops - 1
+    to_link.send(packet)
+```
+
+**All routers MUST implement hop limit enforcement.**
+
+### Route Sequence Numbers — Required
+
+Each route source maintains a 32-bit sequence number that identifies route freshness:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `seqno` | u32 | Incremented when routes change |
+
+**Rules:**
+
+1. **Source** (router or gateway) increments `seqno` when its routes change
+2. **Receivers** only accept routes with `seqno >= last_seen_seqno`
+3. **Duplicate** `seqno` from same source is ignored (already processed)
+4. **Wrap-around** handled via unsigned comparison with window
+
+```python
+class RouteTable:
+    def __init__(self):
+        self.routes: dict[str, RouteEntry] = {}  # destination -> entry
+    
+    def update_route(self, dest: str, via: str, seqno: int, hops: int) -> bool:
+        """Update route if sequence number is newer or equal with better metric"""
+        existing = self.routes.get(dest)
+        
+        if existing:
+            # Reject older sequence numbers
+            if seqno < existing.seqno:
+                return False
+            
+            # Same seqno: only accept if better metric
+            if seqno == existing.seqno and hops >= existing.hops:
+                return False
+        
+        self.routes[dest] = RouteEntry(
+            destination=dest,
+            via=via,
+            seqno=seqno,
+            hops=hops,
+            updated_at=time.time()
+        )
+        return True
+```
+
+**All nodes maintaining route tables MUST implement sequence number tracking.**
+
+### Feasibility Conditions — Recommended
+
+Feasibility conditions (inspired by Babel RFC 8966) provide additional loop-freedom guarantees during route convergence:
+
+| Concept | Description |
+|---------|-------------|
+| **Feasible Distance (FD)** | Best metric ever seen for a route to destination |
+| **Reported Distance (RD)** | Metric advertised by neighbor |
+| **Feasibility Condition** | Accept route only if RD < FD |
+
+**Rules:**
+
+1. **Track FD** for each destination (best hop count ever seen)
+2. **Accept** new route only if its metric is ≤ FD
+3. **Reset FD** when sequence number increases (new route epoch)
+4. **Starvation recovery**: Request new seqno from source if no feasible route exists
+
+```python
+class FeasibilityTracker:
+    def __init__(self):
+        self.feasible_distance: dict[str, tuple[int, int]] = {}  # dest -> (seqno, hops)
+    
+    def is_feasible(self, dest: str, seqno: int, hops: int) -> bool:
+        """Check if route meets feasibility condition"""
+        if dest not in self.feasible_distance:
+            # First route to this destination - always feasible
+            self.feasible_distance[dest] = (seqno, hops)
+            return True
+        
+        stored_seqno, stored_hops = self.feasible_distance[dest]
+        
+        if seqno > stored_seqno:
+            # New epoch - reset feasible distance
+            self.feasible_distance[dest] = (seqno, hops)
+            return True
+        
+        if seqno == stored_seqno and hops <= stored_hops:
+            # Same epoch, better or equal metric - feasible
+            if hops < stored_hops:
+                self.feasible_distance[dest] = (seqno, hops)
+            return True
+        
+        # Worse metric than feasible distance - reject
+        return False
+```
+
+**Recommended for routers; optional for leaf nodes.**
+
+### Split Horizon — Required
+
+Never advertise a route back to the peer from which it was learned:
+
+```
+    Gateway G                    Router R                    Node N
+        │                            │                          │
+        │ ─── route_info{G} ───────► │                          │
+        │                            │ ─── route_info{G} ──────►│
+        │                            │                          │
+        │ ◄─ NO route_info{G} back ─ │  (split horizon)         │
+```
+
+```python
+def propagate_route(self, route: RouteEntry, exclude_peer: str = None):
+    """Propagate route to peers, respecting split horizon"""
+    for peer_hashname, link in self.mesh.links.items():
+        # Split horizon: don't send back to source
+        if peer_hashname == route.via:
+            continue
+        
+        # Don't send to explicitly excluded peer
+        if peer_hashname == exclude_peer:
+            continue
+        
+        # Only propagate if we're configured as a router
+        if self.is_router:
+            self._send_route_info(link, route)
+```
+
+### Route Table Structure
+
+Nodes maintaining routes use this structure:
+
+```python
+@dataclass
+class RouteEntry:
+    destination: str      # Target hashname (or gateway hashname for exit routes)
+    via: str              # Next-hop peer hashname
+    seqno: int            # Route sequence number
+    hops: int             # Hop count to destination
+    updated_at: float     # Timestamp of last update
+    expires_at: float     # When route expires (updated_at + TTL)
+
+class RouteTable:
+    routes: dict[str, RouteEntry]           # destination -> best route
+    feasible_distance: dict[str, tuple]     # destination -> (seqno, best_hops)
+    
+    def get_route(self, destination: str) -> Optional[RouteEntry]:
+        """Get best route to destination, if valid"""
+        entry = self.routes.get(destination)
+        if entry and time.time() < entry.expires_at:
+            return entry
+        return None
+    
+    def expire_routes(self):
+        """Remove expired routes"""
+        now = time.time()
+        expired = [d for d, r in self.routes.items() if now >= r.expires_at]
+        for dest in expired:
+            del self.routes[dest]
+```
+
+### Route Metrics — Core
+
+For basic route selection, TNG uses hop count as the primary metric:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `hops` | u8 | Number of hops to destination (lower = better) |
+
+Route selection prefers:
+1. Lower hop count
+2. More recent sequence number (if hop count equal)
+3. Existing route (stability, if metrics equal)
+
+For advanced metrics including bandwidth, latency, and transport capabilities, see [Route Metrics](route-metrics.md).
+
 ## Error Handling
 
 | Error | Cause | Action |
@@ -297,6 +516,8 @@ def select_router(self, target: str) -> Optional[Link]:
 | `rejected` | Target rejected connection | Report to application |
 | `timeout` | No response from target | Retry or try another router |
 | `rate_limited` | Router limiting traffic | Back off, try later |
+| `ttl_exceeded` | Hop limit reached zero | Packet dropped silently (logged) |
+| `stale_route` | Sequence number too old | Request fresh route |
 
 ## Becoming a Router
 
@@ -341,4 +562,4 @@ TNG routing does **not** provide anonymity:
 
 ---
 
-*Related: [Links](links.md) | [Mesh](mesh.md) | [Channels](channels.md)*
+*Related: [Links](links.md) | [Mesh](mesh.md) | [Channels](channels.md) | [Route Metrics](route-metrics.md)*

@@ -35,7 +35,7 @@ Enable secure communication over any network layer:
 
 Run TNG everywhere:
 
-- **Servers**: High-performance implementations (Rust, Go, C)
+- **Servers**: High-performance implementations (Python, C++)
 - **Mobile**: Native libraries for iOS and Android
 - **Browsers**: WebTransport-based JavaScript implementation
 - **Embedded**: Minimal footprint for microcontrollers (ARM Cortex-M, ESP32, etc.)
@@ -92,6 +92,7 @@ Make secure networking accessible:
 - **[Links](docs/core/links.md)** - Encrypted connections
 - **[Mesh](docs/core/mesh.md)** - Network topology management
 - **[Routing](docs/core/routing.md)** - Packet forwarding and NAT traversal
+- **[Gateway](docs/core/gateway.md)** - IP-over-mesh tunneling with entry/exit nodes
 
 ### Transports
 - **[Transport Overview](docs/transports/README.md)** - Architecture and common interfaces
@@ -103,10 +104,11 @@ Make secure networking accessible:
 **Current Phase**: Specification Complete ✅ | Implementation Planned ⏳
 
 This repository contains the **complete specification** for TNG (Telehash Next Generation), including:
-- ✅ Core protocol building blocks (all 8 components specified)
+- ✅ Core protocol building blocks (all 9 components specified)
 - ✅ Logical transport specifications (QUIC, WebTransport, Bluetooth LE)
 - ✅ Physical transport specifications (802.11, 802.15.4, LoRa, 433/915MHz UART)
 - ✅ Security and cryptography requirements
+- ✅ Gateway specification (IP tunneling, direct exit access, REST client)
 
 **Next Steps**: Reference implementations and language bindings are planned for Phase 2.
 

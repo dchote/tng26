@@ -11,6 +11,9 @@ TNG is organized into distinct layers, each with specific responsibilities:
 │                      Application Layer                          │
 │                   (Your App / Service)                          │
 ├─────────────────────────────────────────────────────────────────┤
+│                     Gateway Layer (Optional)                    │
+│        Entry Gateway │ IP Router │ Exit Gateway │ NAT           │
+├─────────────────────────────────────────────────────────────────┤
 │                        Mesh Layer                               │
 │              Mesh Manager │ Discovery │ Routing                 │
 ├─────────────────────────────────────────────────────────────────┤
@@ -46,6 +49,8 @@ TNG is organized into distinct layers, each with specific responsibilities:
 | **Links** | Encrypted connections between endpoints | [core/links.md](core/links.md) |
 | **Mesh** | Collection of links with discovery | [core/mesh.md](core/mesh.md) |
 | **Routing** | Trusted packet forwarding via routers | [core/routing.md](core/routing.md) |
+| **Route Metrics** | Route cost calculation and transport capabilities | [core/route-metrics.md](core/route-metrics.md) |
+| **Gateway** | IP-over-mesh tunneling with entry/exit nodes | [core/gateway.md](core/gateway.md) |
 
 ## Transport Layer
 
@@ -267,6 +272,8 @@ A full implementation should include:
 - [Links](core/links.md) - Connections
 - [Mesh](core/mesh.md) - Network topology
 - [Routing](core/routing.md) - Packet forwarding
+- [Route Metrics](core/route-metrics.md) - Route cost calculation and transport capabilities
+- [Gateway](core/gateway.md) - IP-over-mesh tunneling
 
 ### Transports
 

@@ -69,7 +69,7 @@ Not all communication is real-time. TNG supports:
 ### Cross-Platform Support
 
 TNG is designed to run everywhere:
-- **Servers**: High-performance implementations in Rust, Go, or C
+- **Servers**: High-performance implementations in Python and C++
 - **Mobile**: Native libraries for iOS and Android
 - **Browsers**: WebTransport-based JavaScript implementation
 - **Embedded**: Minimal footprint for microcontrollers (ARM Cortex-M, ESP32, etc.)
@@ -159,12 +159,12 @@ WireGuard is an excellent modern VPN. TNG differs in:
 - ✅ Specification of core building blocks (Hashname, LOB, E3X, Cipher Suites, Channels, Links, Mesh, Routing)
 - ✅ Logical transport specifications (QUIC, WebTransport, Bluetooth LE)
 - ✅ Physical transport specifications (802.11, 802.15.4, LoRa, 433/915MHz UART)
-- ⏳ Reference implementation in Rust (Planned)
+- ⏳ Reference implementations in Python and C++ (Planned)
 
 ### Phase 2: Ecosystem (Planned)
 - Additional language bindings (JavaScript, Python, Go)
 - Mobile SDKs (iOS, Android)
-- Embedded libraries (C, no-std Rust)
+- Embedded libraries (C++ with embedded support)
 
 ### Phase 3: Advanced Features (Planned)
 - Group channels with MLS-style encryption
